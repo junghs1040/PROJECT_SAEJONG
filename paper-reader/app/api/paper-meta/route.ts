@@ -14,6 +14,7 @@ export async function POST(req: NextRequest) {
       title: meta.title,
       figures: meta.figures,
       equations: meta.equations,
+      sections: meta.sections,
       isAr5iv: meta.isAr5iv,
     });
   } catch {

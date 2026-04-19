@@ -2,7 +2,7 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { PDFParse } from "pdf-parse";
 
-const MAX_CHARS = 14000;
+const MAX_CHARS = 20000;
 
 export type Figure = {
   id: string;
@@ -17,8 +17,17 @@ export type DisplayEquation = {
   latex: string;
 };
 
+export type Section = {
+  level: "section" | "subsection" | "subsubsection";
+  numbering: string;
+  title: string;
+  text: string;
+  equations: string[];
+};
+
 export type PaperMeta = {
   text: string;
+  sections: Section[];
   figures: Figure[];
   equations: DisplayEquation[];
   title: string;
@@ -28,9 +37,7 @@ export type PaperMeta = {
 export async function fetchPaperMeta(url: string): Promise<PaperMeta> {
   const arxivId = extractArxivId(url);
 
-  if (arxivId) {
-    return fetchAr5iv(arxivId);
-  }
+  if (arxivId) return fetchAr5iv(arxivId);
 
   const isPdf =
     url.endsWith(".pdf") ||
@@ -39,11 +46,11 @@ export async function fetchPaperMeta(url: string): Promise<PaperMeta> {
 
   if (isPdf) {
     const text = await fetchPdf(url);
-    return { text, figures: [], equations: [], title: "", isAr5iv: false };
+    return { text, sections: [], figures: [], equations: [], title: "", isAr5iv: false };
   }
 
   const text = await fetchHtml(url);
-  return { text, figures: [], equations: [], title: "", isAr5iv: false };
+  return { text, sections: [], figures: [], equations: [], title: "", isAr5iv: false };
 }
 
 function extractArxivId(url: string): string | null {
@@ -61,7 +68,8 @@ async function fetchAr5iv(arxivId: string): Promise<PaperMeta> {
   const $ = cheerio.load(data);
 
   // Title
-  const title = $("h1.ltx_title").first().text().trim() ||
+  const title =
+    $("h1.ltx_title").first().text().trim() ||
     $("title").text().replace("ar5iv", "").trim();
 
   // Figures: image-based
@@ -82,18 +90,15 @@ async function fetchAr5iv(arxivId: string): Promise<PaperMeta> {
     const caption = $(el).find("figcaption").text().trim();
     const tableEl = $(el).find("table").first();
     if (!tableEl.length || !caption) return;
-
-    // math 태그를 alttext로 교체해서 가독성 확보
     tableEl.find("math").each((__, m) => {
       const alt = $(m).attr("alttext") ?? "";
       $(m).replaceWith(alt);
     });
-
     const tableHtml = $.html(tableEl);
     figures.push({ id, tableHtml, caption, type: "table" });
   });
 
-  // Display equations: extract LaTeX from alttext of display math
+  // Display equations
   const equations: DisplayEquation[] = [];
   $("math[display='block']").each((_, el) => {
     const latex = $(el).find("annotation[encoding='application/x-tex']").text().trim();
@@ -101,16 +106,64 @@ async function fetchAr5iv(arxivId: string): Promise<PaperMeta> {
     if (latex) equations.push({ id, latex });
   });
 
-  // Text: remove scripts, styles, math clutter, keep meaningful content
-  $("script, style, .ltx_bibliography, .ltx_appendix nav").remove();
+  // Section structure: extract each section/subsection with its text + equations
+  const sections: Section[] = [];
+  const sectionSelectors = [
+    { selector: "section.ltx_section", level: "section" as const },
+    { selector: "section.ltx_subsection", level: "subsection" as const },
+    { selector: "section.ltx_subsubsection", level: "subsubsection" as const },
+  ];
+
+  // Use ltx_section elements to get structured content
+  $("section.ltx_section, section.ltx_subsection, section.ltx_subsubsection").each((_, el) => {
+    const elClass = $(el).attr("class") ?? "";
+    const level: Section["level"] = elClass.includes("ltx_subsubsection")
+      ? "subsubsection"
+      : elClass.includes("ltx_subsection")
+      ? "subsection"
+      : "section";
+
+    const titleEl = $(el).children(".ltx_title").first();
+    const numbering = titleEl.find(".ltx_tag").first().text().trim();
+    const sectionTitle = titleEl.text().replace(numbering, "").trim();
+
+    if (!sectionTitle || sectionTitle === "References" || sectionTitle === "Acknowledgments") return;
+
+    // Extract section equations
+    const sectionEqs: string[] = [];
+    $(el).find("math[display='block']").each((__, mathEl) => {
+      const latex = $(mathEl).find("annotation[encoding='application/x-tex']").text().trim();
+      if (latex) sectionEqs.push(latex);
+    });
+
+    // Extract section text (replace math with alttext)
+    const clone = $(el).clone();
+    clone.find(".ltx_bibliography, figure, .ltx_section, .ltx_subsection, .ltx_subsubsection").remove();
+    clone.find("math").each((__, m) => {
+      const alt = $(m).attr("alttext") ?? "";
+      $(m).replaceWith(`$${alt}$`);
+    });
+    const sectionText = clone.text().replace(/\s+/g, " ").trim().slice(0, 1500);
+
+    sections.push({ level, numbering, title: sectionTitle, text: sectionText, equations: sectionEqs });
+  });
+
+  // Full text fallback
+  $("script, style, .ltx_bibliography, nav").remove();
   $("math").each((_, el) => {
     const alttext = $(el).attr("alttext") ?? "";
     $(el).replaceWith(`$${alttext}$`);
   });
-
   const text = clean($("article").text() || $("body").text());
 
-  return { text, figures: figures.slice(0, 20), equations: equations.slice(0, 20), title, isAr5iv: true };
+  return {
+    text,
+    sections: sections.slice(0, 40),
+    figures: figures.slice(0, 20),
+    equations: equations.slice(0, 30),
+    title,
+    isAr5iv: true,
+  };
 }
 
 async function fetchHtml(url: string): Promise<string> {
@@ -118,16 +171,9 @@ async function fetchHtml(url: string): Promise<string> {
     timeout: 15000,
     headers: { "User-Agent": "Mozilla/5.0 PaperReader/1.0" },
   });
-
   const $ = cheerio.load(data);
   $("script, style, nav, footer, header").remove();
-
-  const text =
-    $("article").text() ||
-    $("main").text() ||
-    $("body").text();
-
-  return clean(text);
+  return clean($("article").text() || $("main").text() || $("body").text());
 }
 
 async function fetchPdf(url: string): Promise<string> {
@@ -136,7 +182,6 @@ async function fetchPdf(url: string): Promise<string> {
     timeout: 20000,
     headers: { "User-Agent": "Mozilla/5.0 PaperReader/1.0" },
   });
-
   const parser = new PDFParse({ data: Buffer.from(data) });
   const result = await parser.getText();
   await parser.destroy();
@@ -144,8 +189,5 @@ async function fetchPdf(url: string): Promise<string> {
 }
 
 function clean(text: string): string {
-  return text
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, MAX_CHARS);
+  return text.replace(/\s+/g, " ").trim().slice(0, MAX_CHARS);
 }

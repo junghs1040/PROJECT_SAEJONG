@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     level: (level as AnalysisOptions["level"]) || "practitioner",
   };
 
-  const prompt = buildPrompt(meta.text, options, meta.figures, meta.equations);
+  const prompt = buildPrompt(meta.text, options, meta.figures, meta.equations, meta.sections);
 
   let stream: Awaited<ReturnType<typeof openai.chat.completions.create>>;
   try {
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
       messages: [{ role: "user", content: prompt }],
       stream: true,
       temperature: 0.3,
-      max_tokens: 4000,
+      max_tokens: 6000,
     });
   } catch (e: unknown) {
     const msg =
