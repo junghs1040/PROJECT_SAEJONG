@@ -189,10 +189,11 @@ function FigureCard({ fig }: { fig: Figure }) {
           <div className="absolute inset-0 animate-pulse" style={{ backgroundColor: "var(--border)" }} />
         )}
       </div>
-      <p className="px-3 pb-3 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>
-        {num && <strong style={{ color: "var(--sky)" }}>Fig.{num} </strong>}
-        {fig.caption.replace(/^Figure\s*\d+[:\s]*/i, "")}
-      </p>
+      {num && (
+        <p className="px-3 pb-2 text-xs font-medium" style={{ color: "var(--sky)" }}>
+          Fig.{num}
+        </p>
+      )}
     </div>
   );
 }
@@ -210,7 +211,8 @@ function MarkdownResult({ text, figures }: { text: string; figures: Figure[] }) 
       const content = sections[i + 1] ?? "";
       i++;
 
-      // Find referenced figures in this section
+      const isTechDeep = title.includes("기술적 상세") || title.includes("Technical Deep Dive");
+
       const referencedFigs = figures.filter((f) => {
         const num = f.caption.match(/Figure\s*(\d+)/i)?.[1];
         return num && content.includes(`Figure ${num}`);
@@ -224,26 +226,147 @@ function MarkdownResult({ text, figures }: { text: string; figures: Figure[] }) 
           >
             <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>{title}</h2>
           </div>
-          <div className="px-5 py-4 flex flex-col gap-3">
-            <RichText text={content.trim()} />
-            {referencedFigs.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
-                {referencedFigs.map((f) => <FigureCard key={f.id} fig={f} />)}
-              </div>
-            )}
+          <div className="px-5 py-4 flex flex-col gap-4">
+            {isTechDeep
+              ? <TechDeepContent text={content.trim()} figures={figures} />
+              : <>
+                  <RichText text={content.trim()} />
+                  {referencedFigs.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                      {referencedFigs.map((f) => <FigureCard key={f.id} fig={f} />)}
+                    </div>
+                  )}
+                </>
+            }
           </div>
         </section>
       );
     } else if (s) {
-      elements.push(
-        <div key={i}>
-          <RichText text={s} />
-        </div>
-      );
+      elements.push(<div key={i}><RichText text={s} /></div>);
     }
   }
 
   return <div className="flex flex-col gap-4">{elements}</div>;
+}
+
+// 기술적 상세 섹션: ### 블록마다 개념 카드로 분리
+function TechDeepContent({ text, figures }: { text: string; figures: Figure[] }) {
+  const blocks = text.split(/^(###\s.+)$/m).filter(Boolean);
+
+  if (blocks.length <= 1) {
+    return <RichText text={text} />;
+  }
+
+  const cards: React.ReactNode[] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i].trim();
+    if (b.startsWith("### ")) {
+      const conceptTitle = b.replace(/^###\s/, "");
+      const body = blocks[i + 1] ?? "";
+      i++;
+
+      const referencedFigs = figures.filter((f) => {
+        const num = f.caption.match(/Figure\s*(\d+)/i)?.[1];
+        return num && body.includes(`Figure ${num}`);
+      });
+
+      cards.push(
+        <div
+          key={i}
+          className="rounded-xl border overflow-hidden"
+          style={{ borderColor: "var(--border)", backgroundColor: "#fafcff" }}
+        >
+          {/* 개념 제목 */}
+          <div
+            className="px-4 py-2.5 flex items-center gap-2"
+            style={{ backgroundColor: "#e8f4fd", borderBottom: "1px solid var(--border)" }}
+          >
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: "var(--sky)" }} />
+            <h3 className="text-sm font-semibold" style={{ color: "#1a1a2e" }}>{conceptTitle}</h3>
+          </div>
+
+          <div className="flex flex-col gap-0">
+            {/* 이미지가 있으면 상단에 표시 */}
+            {referencedFigs.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 border-b" style={{ borderColor: "var(--border)" }}>
+                {referencedFigs.map((f) => <FigureCard key={f.id} fig={f} />)}
+              </div>
+            )}
+
+            {/* 본문: **레이블:** 패턴을 행별 구분 블록으로 렌더링 */}
+            <ConceptBody text={body.trim()} />
+          </div>
+        </div>
+      );
+    } else if (b) {
+      cards.push(<RichText key={i} text={b} />);
+    }
+  }
+
+  return <div className="flex flex-col gap-4">{cards}</div>;
+}
+
+// **레이블:** 패턴을 감지해서 레이블+내용 행으로 분리 렌더링
+function ConceptBody({ text }: { text: string }) {
+  const lines = text.split("\n");
+  const rows: React.ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === "") { i++; continue; }
+
+    const labelMatch = line.match(/^\*\*(.+?):\*\*\s*(.*)/);
+    if (labelMatch) {
+      const label = labelMatch[1];
+      let content = labelMatch[2];
+
+      // 다음 줄이 $$수식$$ 블록이면 같이 수집
+      const nextLines: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() !== "" && !lines[j].match(/^\*\*(.+?):\*\*/)) {
+        nextLines.push(lines[j]);
+        j++;
+      }
+      if (nextLines.length > 0) {
+        content = [content, ...nextLines].join("\n").trim();
+        i = j;
+      } else {
+        i++;
+      }
+
+      rows.push(
+        <div key={i} className="flex gap-0 border-b last:border-b-0" style={{ borderColor: "var(--border)" }}>
+          <div
+            className="w-28 flex-shrink-0 px-4 py-3 text-xs font-semibold flex items-start"
+            style={{ color: "var(--sky)", backgroundColor: "#f0f8ff", borderRight: "1px solid var(--border)" }}
+          >
+            {label}
+          </div>
+          <div className="flex-1 px-4 py-3 text-sm leading-7">
+            <RichText text={content} />
+          </div>
+        </div>
+      );
+    } else if (line.startsWith("- ") || line.startsWith("• ")) {
+      rows.push(
+        <div key={i} className="flex gap-2 items-start px-4 py-1">
+          <span className="mt-2.5 w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: "var(--sky)" }} />
+          <span className="text-sm leading-7"><MathLine text={line.replace(/^[-•]\s/, "")} /></span>
+        </div>
+      );
+      i++;
+    } else {
+      rows.push(
+        <p key={i} className="px-4 py-1 text-sm leading-7" style={{ color: "var(--foreground)" }}>
+          <MathLine text={line} />
+        </p>
+      );
+      i++;
+    }
+  }
+
+  return <div className="flex flex-col">{rows}</div>;
 }
 
 function RichText({ text }: { text: string }) {
@@ -260,8 +383,18 @@ function RichText({ text }: { text: string }) {
             </div>
           );
         }
+        // **bold:** 패턴을 인라인 강조로
+        const boldMatch = line.match(/^\*\*(.+?):\*\*\s*(.*)/);
+        if (boldMatch) {
+          return (
+            <p key={i} className="text-sm leading-7">
+              <strong style={{ color: "var(--sky)" }}>{boldMatch[1]}:</strong>{" "}
+              <MathLine text={boldMatch[2]} />
+            </p>
+          );
+        }
         return (
-          <p key={i} className="text-sm leading-7">
+          <p key={i} className="text-sm leading-7" style={{ color: "var(--foreground)" }}>
             <MathLine text={line} />
           </p>
         );
