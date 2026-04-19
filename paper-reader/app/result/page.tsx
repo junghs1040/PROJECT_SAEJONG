@@ -160,9 +160,9 @@ function FiguresPanel({ figures }: { figures: Figure[] }) {
 }
 
 function FigureCard({ fig }: { fig: Figure }) {
-  const figNum = fig.caption.match(/Figure\s*(\d+)/i)?.[1] ?? "";
-  const tableNum = fig.caption.match(/Table\s*(\d+)/i)?.[1] ?? "";
-  const label = tableNum ? `Table ${tableNum}` : figNum ? `Fig. ${figNum}` : "";
+  const figRaw = fig.caption.match(/Figure\s+([IVXivx\d]+)/i)?.[1] ?? "";
+  const tableRaw = fig.caption.match(/Table\s+([IVXivx\d]+)/i)?.[1] ?? "";
+  const label = tableRaw ? `Table ${tableRaw.toUpperCase()}` : figRaw ? `Fig. ${figRaw}` : "";
 
   return (
     <div className="rounded-xl border overflow-hidden w-full" style={{ borderColor: "var(--border)" }}>
@@ -208,18 +208,37 @@ function ImageFigure({ fig }: { fig: Figure }) {
   );
 }
 
-// 텍스트에서 언급된 Figure/Table을 유연하게 찾아 반환
+const ARABIC_TO_ROMAN: Record<string, string> = {
+  "1":"I","2":"II","3":"III","4":"IV","5":"V","6":"VI","7":"VII","8":"VIII",
+  "9":"IX","10":"X","11":"XI","12":"XII","13":"XIII","14":"XIV","15":"XV",
+  "16":"XVI","17":"XVII","18":"XVIII","19":"XIX","20":"XX",
+};
+const ROMAN_TO_ARABIC: Record<string, string> = Object.fromEntries(
+  Object.entries(ARABIC_TO_ROMAN).map(([a, r]) => [r, a])
+);
+
+function numVariants(raw: string): string[] {
+  const upper = raw.toUpperCase();
+  const arabic = ROMAN_TO_ARABIC[upper] ?? raw;
+  const roman = ARABIC_TO_ROMAN[arabic] ?? upper;
+  return [...new Set([raw, arabic, roman])];
+}
+
+// 텍스트에서 언급된 Figure/Table을 유연하게 찾아 반환 (로마숫자 포함)
 function findRefs(text: string, figures: Figure[]): Figure[] {
   return figures.filter((f) => {
-    const figNum = f.caption.match(/Figure\s*(\d+)/i)?.[1];
-    const tableNum = f.caption.match(/Table\s*(\d+)/i)?.[1];
-    if (figNum) {
-      const re = new RegExp(`Figure[\\s.]*${figNum}(?![0-9])`, "i");
-      if (re.test(text)) return true;
+    const figRaw = f.caption.match(/Figure\s+([IVXivx\d]+)/i)?.[1];
+    const tableRaw = f.caption.match(/Table\s+([IVXivx\d]+)/i)?.[1];
+
+    if (figRaw) {
+      for (const v of numVariants(figRaw)) {
+        if (new RegExp(`Figure[\\s.]*${v}(?![\\dIVXivx])`, "i").test(text)) return true;
+      }
     }
-    if (tableNum) {
-      const re = new RegExp(`(Table[\\s.]*${tableNum}|표\\s*${tableNum})(?![0-9])`, "i");
-      if (re.test(text)) return true;
+    if (tableRaw) {
+      for (const v of numVariants(tableRaw)) {
+        if (new RegExp(`(Table[\\s.]*${v}|표\\s*${v})(?![\\dIVXivx])`, "i").test(text)) return true;
+      }
     }
     return false;
   });

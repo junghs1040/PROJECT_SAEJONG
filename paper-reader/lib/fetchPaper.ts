@@ -9,7 +9,7 @@ export type Figure = {
   url?: string;
   tableHtml?: string;
   caption: string;
-  type: "figure" | "table";
+  type: "figure" | "table" | "page";
 };
 
 export type DisplayEquation = {
@@ -45,8 +45,11 @@ export async function fetchPaperMeta(url: string): Promise<PaperMeta> {
     url.includes("arxiv.org/pdf");
 
   if (isPdf) {
-    const text = await fetchPdf(url);
-    return { text, sections: [], figures: [], equations: [], title: "", isAr5iv: false };
+    const [text, pageShots] = await Promise.all([
+      fetchPdf(url),
+      fetchPdfPageScreenshots(url).catch(() => [] as Figure[]),
+    ]);
+    return { text, sections: [], figures: pageShots, equations: [], title: "", isAr5iv: false };
   }
 
   const text = await fetchHtml(url);
@@ -177,15 +180,45 @@ async function fetchHtml(url: string): Promise<string> {
 }
 
 async function fetchPdf(url: string): Promise<string> {
+  const { data } = await fetchPdfBuffer(url);
+  const parser = new PDFParse({ data: Buffer.from(data) });
+  const result = await parser.getText();
+  await parser.destroy();
+  return clean(result.text);
+}
+
+export async function fetchPdfBuffer(url: string): Promise<{ data: ArrayBuffer }> {
   const { data } = await axios.get(url, {
     responseType: "arraybuffer",
     timeout: 20000,
     headers: { "User-Agent": "Mozilla/5.0 PaperReader/1.0" },
   });
+  return { data };
+}
+
+export async function fetchPdfPageScreenshots(url: string): Promise<Figure[]> {
+  const { data } = await fetchPdfBuffer(url);
   const parser = new PDFParse({ data: Buffer.from(data) });
-  const result = await parser.getText();
+
+  const pagesToRender = 20;
+  const figures: Figure[] = [];
+
+  try {
+    const result = await parser.getScreenshot({ last: pagesToRender });
+    for (const page of result.pages) {
+      if (page.dataUrl) {
+        figures.push({
+          id: `page-${page.pageNumber}`,
+          url: page.dataUrl,
+          caption: `Page ${page.pageNumber}`,
+          type: "page",
+        });
+      }
+    }
+  } catch { /* canvas 없는 경우 등 */ }
+
   await parser.destroy();
-  return clean(result.text);
+  return figures;
 }
 
 function clean(text: string): string {
