@@ -2,27 +2,99 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { PDFParse } from "pdf-parse";
 
-const MAX_CHARS = 12000;
+const MAX_CHARS = 14000;
 
-export async function fetchPaperText(url: string): Promise<string> {
+export type Figure = {
+  id: string;
+  url: string;
+  caption: string;
+};
+
+export type DisplayEquation = {
+  id: string;
+  latex: string;
+};
+
+export type PaperMeta = {
+  text: string;
+  figures: Figure[];
+  equations: DisplayEquation[];
+  title: string;
+  isAr5iv: boolean;
+};
+
+export async function fetchPaperMeta(url: string): Promise<PaperMeta> {
+  const arxivId = extractArxivId(url);
+
+  if (arxivId) {
+    return fetchAr5iv(arxivId);
+  }
+
   const isPdf =
     url.endsWith(".pdf") ||
     url.includes("/pdf/") ||
     url.includes("arxiv.org/pdf");
 
   if (isPdf) {
-    return fetchPdf(url);
+    const text = await fetchPdf(url);
+    return { text, figures: [], equations: [], title: "", isAr5iv: false };
   }
 
-  const htmlUrl = toHtmlUrl(url);
-  return fetchHtml(htmlUrl);
+  const text = await fetchHtml(url);
+  return { text, figures: [], equations: [], title: "", isAr5iv: false };
 }
 
-function toHtmlUrl(url: string): string {
-  if (url.includes("arxiv.org/pdf/")) {
-    return url.replace("arxiv.org/pdf/", "arxiv.org/abs/").replace(/\.pdf$/, "");
-  }
-  return url;
+function extractArxivId(url: string): string | null {
+  const m = url.match(/arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,5}(?:v\d+)?)/);
+  return m ? m[1] : null;
+}
+
+async function fetchAr5iv(arxivId: string): Promise<PaperMeta> {
+  const ar5ivUrl = `https://ar5iv.org/abs/${arxivId}`;
+  const { data } = await axios.get(ar5ivUrl, {
+    timeout: 20000,
+    headers: { "User-Agent": "Mozilla/5.0 PaperReader/1.0" },
+  });
+
+  const $ = cheerio.load(data);
+
+  // Title
+  const title = $("h1.ltx_title").first().text().trim() ||
+    $("title").text().replace("ar5iv", "").trim();
+
+  // Figures: extract id, image url, caption
+  const figures: Figure[] = [];
+  $("figure.ltx_figure").each((_, el) => {
+    const id = $(el).attr("id") ?? "";
+    const imgSrc = $(el).find("img").first().attr("src") ?? "";
+    const caption = $(el).find("figcaption").text().trim();
+
+    if (imgSrc && caption && !caption.toLowerCase().includes("table")) {
+      const fullUrl = imgSrc.startsWith("http")
+        ? imgSrc
+        : `https://ar5iv.org${imgSrc}`;
+      figures.push({ id, url: fullUrl, caption });
+    }
+  });
+
+  // Display equations: extract LaTeX from alttext of display math
+  const equations: DisplayEquation[] = [];
+  $("math[display='block']").each((_, el) => {
+    const latex = $(el).find("annotation[encoding='application/x-tex']").text().trim();
+    const id = $(el).attr("id") ?? `eq-${equations.length + 1}`;
+    if (latex) equations.push({ id, latex });
+  });
+
+  // Text: remove scripts, styles, math clutter, keep meaningful content
+  $("script, style, .ltx_bibliography, .ltx_appendix nav").remove();
+  $("math").each((_, el) => {
+    const alttext = $(el).attr("alttext") ?? "";
+    $(el).replaceWith(`$${alttext}$`);
+  });
+
+  const text = clean($("article").text() || $("body").text());
+
+  return { text, figures: figures.slice(0, 12), equations: equations.slice(0, 20), title, isAr5iv: true };
 }
 
 async function fetchHtml(url: string): Promise<string> {
@@ -32,12 +104,11 @@ async function fetchHtml(url: string): Promise<string> {
   });
 
   const $ = cheerio.load(data);
-  $("script, style, nav, footer, header, .ads, #ads").remove();
+  $("script, style, nav, footer, header").remove();
 
   const text =
     $("article").text() ||
     $("main").text() ||
-    $(".abstract").text() + $(".paper-content").text() ||
     $("body").text();
 
   return clean(text);
@@ -59,7 +130,6 @@ async function fetchPdf(url: string): Promise<string> {
 function clean(text: string): string {
   return text
     .replace(/\s+/g, " ")
-    .replace(/[^\S\n]+/g, " ")
     .trim()
     .slice(0, MAX_CHARS);
 }
