@@ -364,24 +364,11 @@ function ExperimentContent({ text, figures }: { text: string; figures: Figure[] 
             {/* 표/그래프 이미지 먼저 크게 표시 */}
             {referencedFigs.map((f) => <FigureCard key={f.id} fig={f} />)}
 
-            {/* 설명 bullet */}
-            <div className="flex flex-col gap-1.5">
+            {/* 설명 */}
+            <div className="flex flex-col gap-0.5">
               {body.trim().split("\n").map((line, li) => {
-                if (line.trim() === "") return <div key={li} className="h-1" />;
-                if (line.startsWith("- ") || line.startsWith("• ")) {
-                  return (
-                    <div key={li} className="flex gap-2 items-start">
-                      <span className="mt-2 w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: "var(--sky)" }} />
-                      <span className="text-sm leading-7"><MathLine text={line.replace(/^[-•]\s/, "")} /></span>
-                    </div>
-                  );
-                }
-                if (line.match(/^(Table|Figure|표|그래프)\s*\d+/i)) return null;
-                return (
-                  <p key={li} className="text-sm leading-7" style={{ color: "var(--foreground)" }}>
-                    <MathLine text={line} />
-                  </p>
-                );
+                if (line.match(/^(Table|Figure|표|그래프)\s*\d+\s*(참조)?$/i)) return null;
+                return <RichLine key={li} line={line} />;
               })}
             </div>
           </div>
@@ -437,19 +424,11 @@ function ConceptBody({ text }: { text: string }) {
           </div>
         </div>
       );
-    } else if (line.startsWith("- ") || line.startsWith("• ")) {
-      rows.push(
-        <div key={i} className="flex gap-2 items-start px-4 py-1">
-          <span className="mt-2.5 w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: "var(--sky)" }} />
-          <span className="text-sm leading-7"><MathLine text={line.replace(/^[-•]\s/, "")} /></span>
-        </div>
-      );
-      i++;
     } else {
       rows.push(
-        <p key={i} className="px-4 py-1 text-sm leading-7" style={{ color: "var(--foreground)" }}>
-          <MathLine text={line} />
-        </p>
+        <div key={i} className="px-4 py-0.5">
+          <RichLine line={line} />
+        </div>
       );
       i++;
     }
@@ -461,33 +440,113 @@ function ConceptBody({ text }: { text: string }) {
 function RichText({ text }: { text: string }) {
   const lines = text.split("\n");
   return (
-    <div className="flex flex-col gap-1.5">
-      {lines.map((line, i) => {
-        if (line.trim() === "") return <div key={i} className="h-1" />;
-        if (line.startsWith("- ") || line.startsWith("• ")) {
-          return (
-            <div key={i} className="flex gap-2 items-start">
-              <span className="mt-2 w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: "var(--sky)" }} />
-              <span className="text-sm leading-7"><MathLine text={line.replace(/^[-•]\s/, "")} /></span>
-            </div>
-          );
-        }
-        // **bold:** 패턴을 인라인 강조로
-        const boldMatch = line.match(/^\*\*(.+?):\*\*\s*(.*)/);
-        if (boldMatch) {
-          return (
-            <p key={i} className="text-sm leading-7">
-              <strong style={{ color: "var(--sky)" }}>{boldMatch[1]}:</strong>{" "}
-              <MathLine text={boldMatch[2]} />
-            </p>
-          );
-        }
-        return (
-          <p key={i} className="text-sm leading-7" style={{ color: "var(--foreground)" }}>
-            <MathLine text={line} />
-          </p>
-        );
-      })}
+    <div className="flex flex-col gap-1">
+      {lines.map((line, i) => <RichLine key={i} line={line} />)}
+    </div>
+  );
+}
+
+type LineStyle = {
+  marker: string;
+  indent: string;
+  color: string;
+  bg?: string;
+  bold?: boolean;
+};
+
+function getLineStyle(line: string): LineStyle | null {
+  if (line.startsWith("◆ "))  return { marker: "◆", indent: "pl-0",   color: "#1a1a2e", bold: true };
+  if (line.startsWith("> "))   return { marker: ">", indent: "pl-3",   color: "var(--sky)" };
+  if (line.startsWith("▷ "))  return { marker: "▷", indent: "pl-6",   color: "#64748b" };
+  if (line.startsWith("→ "))  return { marker: "→", indent: "pl-3",   color: "#3a9fd8" };
+  if (line.startsWith("※ "))  return { marker: "※", indent: "pl-3",   color: "#94a3b8" };
+  if (line.startsWith("- ") || line.startsWith("• "))
+                                return { marker: "•", indent: "pl-0",   color: "var(--foreground)" };
+  return null;
+}
+
+function RichLine({ line }: { line: string }) {
+  if (line.trim() === "") return <div className="h-1" />;
+
+  const style = getLineStyle(line);
+
+  // **bold:** 레이블 패턴
+  const boldMatch = line.match(/^\*\*(.+?):\*\*\s*(.*)/);
+  if (boldMatch) {
+    return (
+      <p className="text-sm leading-7 mt-1">
+        <strong style={{ color: "var(--sky)" }}>{boldMatch[1]}:</strong>{" "}
+        <MathLine text={boldMatch[2]} />
+      </p>
+    );
+  }
+
+  if (!style) {
+    return (
+      <p className="text-sm leading-7" style={{ color: "var(--foreground)" }}>
+        <MathLine text={line} />
+      </p>
+    );
+  }
+
+  const rawText = line.replace(/^(◆|>|▷|→|※|-|•)\s/, "");
+
+  if (style.marker === "◆") {
+    return (
+      <div className="flex gap-2 items-start mt-2 mb-0.5">
+        <span className="flex-shrink-0 font-bold text-base leading-7" style={{ color: "var(--sky)" }}>◆</span>
+        <span className="text-sm leading-7 font-semibold" style={{ color: "#1a1a2e" }}>
+          <MathLine text={rawText} />
+        </span>
+      </div>
+    );
+  }
+  if (style.marker === ">") {
+    return (
+      <div className="flex gap-2 items-start pl-3 border-l-2 my-0.5" style={{ borderColor: "var(--sky)" }}>
+        <span className="text-sm leading-7" style={{ color: "var(--foreground)" }}>
+          <MathLine text={rawText} />
+        </span>
+      </div>
+    );
+  }
+  if (style.marker === "▷") {
+    return (
+      <div className="flex gap-2 items-start pl-6 my-0.5">
+        <span className="flex-shrink-0 text-xs leading-7" style={{ color: "#94a3b8" }}>▷</span>
+        <span className="text-sm leading-7" style={{ color: "var(--text-secondary)" }}>
+          <MathLine text={rawText} />
+        </span>
+      </div>
+    );
+  }
+  if (style.marker === "→") {
+    return (
+      <div className="flex gap-2 items-start pl-3 my-0.5">
+        <span className="flex-shrink-0 text-sm leading-7 font-medium" style={{ color: "var(--sky)" }}>→</span>
+        <span className="text-sm leading-7" style={{ color: "var(--foreground)" }}>
+          <MathLine text={rawText} />
+        </span>
+      </div>
+    );
+  }
+  if (style.marker === "※") {
+    return (
+      <div className="flex gap-2 items-start pl-3 my-0.5">
+        <span className="flex-shrink-0 text-xs leading-7" style={{ color: "#94a3b8" }}>※</span>
+        <span className="text-sm leading-7 italic" style={{ color: "#94a3b8" }}>
+          <MathLine text={rawText} />
+        </span>
+      </div>
+    );
+  }
+  // bullet (- or •)
+  return (
+    <div className="flex gap-2 items-start my-0.5">
+      <span className="mt-2.5 w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: "var(--sky)" }} />
+      <span className="text-sm leading-7" style={{ color: "var(--foreground)" }}>
+        <MathLine text={rawText} />
+      </span>
     </div>
   );
 }
