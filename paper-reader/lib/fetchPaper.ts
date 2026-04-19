@@ -62,14 +62,14 @@ async function fetchAr5iv(arxivId: string): Promise<PaperMeta> {
   const title = $("h1.ltx_title").first().text().trim() ||
     $("title").text().replace("ar5iv", "").trim();
 
-  // Figures: extract id, image url, caption
+  // Figures + Tables: extract id, image url, caption
   const figures: Figure[] = [];
-  $("figure.ltx_figure").each((_, el) => {
+  $("figure.ltx_figure, figure.ltx_table").each((_, el) => {
     const id = $(el).attr("id") ?? "";
     const imgSrc = $(el).find("img").first().attr("src") ?? "";
     const caption = $(el).find("figcaption").text().trim();
 
-    if (imgSrc && caption && !caption.toLowerCase().includes("table")) {
+    if (imgSrc && caption) {
       const fullUrl = imgSrc.startsWith("http")
         ? imgSrc
         : `https://ar5iv.org${imgSrc}`;
@@ -94,7 +94,7 @@ async function fetchAr5iv(arxivId: string): Promise<PaperMeta> {
 
   const text = clean($("article").text() || $("body").text());
 
-  return { text, figures: figures.slice(0, 12), equations: equations.slice(0, 20), title, isAr5iv: true };
+  return { text, figures: figures.slice(0, 20), equations: equations.slice(0, 20), title, isAr5iv: true };
 }
 
 async function fetchHtml(url: string): Promise<string> {

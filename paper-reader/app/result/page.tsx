@@ -107,11 +107,6 @@ function ResultContent() {
       </div>
 
       <main className="flex-1 max-w-3xl w-full mx-auto px-6 py-8 flex flex-col gap-6">
-        {/* Figures panel */}
-        {meta && meta.figures.length > 0 && (
-          <FiguresPanel figures={meta.figures} />
-        )}
-
         {/* Analysis output */}
         {status === "error" ? (
           <div className="rounded-xl p-6 border text-sm" style={{ borderColor: "#fca5a5", backgroundColor: "#fef2f2", color: "#dc2626" }}>
@@ -168,17 +163,19 @@ function FigureCard({ fig }: { fig: Figure }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
 
-  const num = fig.caption.match(/Figure\s*(\d+)/i)?.[1] ?? "";
+  const figNum = fig.caption.match(/Figure\s*(\d+)/i)?.[1] ?? "";
+  const tableNum = fig.caption.match(/Table\s*(\d+)/i)?.[1] ?? "";
+  const label = tableNum ? `Table ${tableNum}` : figNum ? `Fig. ${figNum}` : "";
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)" }}>
-      <div className="relative bg-gray-50 flex items-center justify-center" style={{ minHeight: 140 }}>
+    <div className="rounded-xl border overflow-hidden w-full" style={{ borderColor: "var(--border)" }}>
+      <div className="relative bg-gray-50 flex items-center justify-center" style={{ minHeight: 180 }}>
         {!error ? (
           <img
             src={fig.url}
             alt={fig.caption}
             className="w-full object-contain"
-            style={{ maxHeight: 220, opacity: loaded ? 1 : 0, transition: "opacity 0.3s" }}
+            style={{ maxHeight: 420, opacity: loaded ? 1 : 0, transition: "opacity 0.3s" }}
             onLoad={() => setLoaded(true)}
             onError={() => setError(true)}
           />
@@ -188,12 +185,15 @@ function FigureCard({ fig }: { fig: Figure }) {
         {!loaded && !error && (
           <div className="absolute inset-0 animate-pulse" style={{ backgroundColor: "var(--border)" }} />
         )}
+        {label && (
+          <span
+            className="absolute top-2 left-2 text-xs font-semibold px-2 py-0.5 rounded-md"
+            style={{ backgroundColor: "var(--sky)", color: "#fff" }}
+          >
+            {label}
+          </span>
+        )}
       </div>
-      {num && (
-        <p className="px-3 pb-2 text-xs font-medium" style={{ color: "var(--sky)" }}>
-          Fig.{num}
-        </p>
-      )}
     </div>
   );
 }
@@ -212,10 +212,13 @@ function MarkdownResult({ text, figures }: { text: string; figures: Figure[] }) 
       i++;
 
       const isTechDeep = title.includes("기술적 상세") || title.includes("Technical Deep Dive");
+      const isExperiment = title.includes("실험 결과");
 
       const referencedFigs = figures.filter((f) => {
-        const num = f.caption.match(/Figure\s*(\d+)/i)?.[1];
-        return num && content.includes(`Figure ${num}`);
+        const figNum = f.caption.match(/Figure\s*(\d+)/i)?.[1];
+        const tableNum = f.caption.match(/Table\s*(\d+)/i)?.[1];
+        return (figNum && content.includes(`Figure ${figNum}`)) ||
+               (tableNum && (content.includes(`Table ${tableNum}`) || content.includes(`표 ${tableNum}`)));
       });
 
       elements.push(
@@ -229,10 +232,12 @@ function MarkdownResult({ text, figures }: { text: string; figures: Figure[] }) 
           <div className="px-5 py-4 flex flex-col gap-4">
             {isTechDeep
               ? <TechDeepContent text={content.trim()} figures={figures} />
+              : isExperiment
+              ? <ExperimentContent text={content.trim()} figures={figures} />
               : <>
                   <RichText text={content.trim()} />
                   {referencedFigs.length > 0 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                    <div className="flex flex-col gap-3 mt-1">
                       {referencedFigs.map((f) => <FigureCard key={f.id} fig={f} />)}
                     </div>
                   )}
@@ -288,13 +293,83 @@ function TechDeepContent({ text, figures }: { text: string; figures: Figure[] })
           <div className="flex flex-col gap-0">
             {/* 이미지가 있으면 상단에 표시 */}
             {referencedFigs.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 border-b" style={{ borderColor: "var(--border)" }}>
+              <div className="flex flex-col gap-3 p-4 border-b" style={{ borderColor: "var(--border)" }}>
                 {referencedFigs.map((f) => <FigureCard key={f.id} fig={f} />)}
               </div>
             )}
 
             {/* 본문: **레이블:** 패턴을 행별 구분 블록으로 렌더링 */}
             <ConceptBody text={body.trim()} />
+          </div>
+        </div>
+      );
+    } else if (b) {
+      cards.push(<RichText key={i} text={b} />);
+    }
+  }
+
+  return <div className="flex flex-col gap-4">{cards}</div>;
+}
+
+// 실험 결과 섹션: ### 블록마다 표/그래프 + 설명 카드
+function ExperimentContent({ text, figures }: { text: string; figures: Figure[] }) {
+  const blocks = text.split(/^(###\s.+)$/m).filter(Boolean);
+
+  if (blocks.length <= 1) return <RichText text={text} />;
+
+  const cards: React.ReactNode[] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i].trim();
+    if (b.startsWith("### ")) {
+      const blockTitle = b.replace(/^###\s/, "");
+      const body = blocks[i + 1] ?? "";
+      i++;
+
+      const referencedFigs = figures.filter((f) => {
+        const figNum = f.caption.match(/Figure\s*(\d+)/i)?.[1];
+        const tableNum = f.caption.match(/Table\s*(\d+)/i)?.[1];
+        return (figNum && body.includes(`Figure ${figNum}`)) ||
+               (tableNum && (body.includes(`Table ${tableNum}`) || body.includes(`표 ${tableNum}`)));
+      });
+
+      cards.push(
+        <div
+          key={i}
+          className="rounded-xl border overflow-hidden"
+          style={{ borderColor: "var(--border)", backgroundColor: "#fafcff" }}
+        >
+          <div
+            className="px-4 py-2.5 flex items-center gap-2"
+            style={{ backgroundColor: "#e8f4fd", borderBottom: "1px solid var(--border)" }}
+          >
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: "var(--sky)" }} />
+            <h3 className="text-sm font-semibold" style={{ color: "#1a1a2e" }}>{blockTitle}</h3>
+          </div>
+
+          <div className="flex flex-col gap-4 p-4">
+            {/* 표/그래프 이미지 먼저 크게 표시 */}
+            {referencedFigs.map((f) => <FigureCard key={f.id} fig={f} />)}
+
+            {/* 설명 bullet */}
+            <div className="flex flex-col gap-1.5">
+              {body.trim().split("\n").map((line, li) => {
+                if (line.trim() === "") return <div key={li} className="h-1" />;
+                if (line.startsWith("- ") || line.startsWith("• ")) {
+                  return (
+                    <div key={li} className="flex gap-2 items-start">
+                      <span className="mt-2 w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: "var(--sky)" }} />
+                      <span className="text-sm leading-7"><MathLine text={line.replace(/^[-•]\s/, "")} /></span>
+                    </div>
+                  );
+                }
+                if (line.match(/^(Table|Figure|표|그래프)\s*\d+/i)) return null;
+                return (
+                  <p key={li} className="text-sm leading-7" style={{ color: "var(--foreground)" }}>
+                    <MathLine text={line} />
+                  </p>
+                );
+              })}
+            </div>
           </div>
         </div>
       );
