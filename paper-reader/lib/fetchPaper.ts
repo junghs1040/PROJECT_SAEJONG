@@ -6,8 +6,10 @@ const MAX_CHARS = 14000;
 
 export type Figure = {
   id: string;
-  url: string;
+  url?: string;
+  tableHtml?: string;
   caption: string;
+  type: "figure" | "table";
 };
 
 export type DisplayEquation = {
@@ -62,19 +64,33 @@ async function fetchAr5iv(arxivId: string): Promise<PaperMeta> {
   const title = $("h1.ltx_title").first().text().trim() ||
     $("title").text().replace("ar5iv", "").trim();
 
-  // Figures + Tables: extract id, image url, caption
+  // Figures: image-based
   const figures: Figure[] = [];
-  $("figure.ltx_figure, figure.ltx_table").each((_, el) => {
+  $("figure.ltx_figure").each((_, el) => {
     const id = $(el).attr("id") ?? "";
     const imgSrc = $(el).find("img").first().attr("src") ?? "";
     const caption = $(el).find("figcaption").text().trim();
-
     if (imgSrc && caption) {
-      const fullUrl = imgSrc.startsWith("http")
-        ? imgSrc
-        : `https://ar5iv.org${imgSrc}`;
-      figures.push({ id, url: fullUrl, caption });
+      const fullUrl = imgSrc.startsWith("http") ? imgSrc : `https://ar5iv.org${imgSrc}`;
+      figures.push({ id, url: fullUrl, caption, type: "figure" });
     }
+  });
+
+  // Tables: HTML-based
+  $("figure.ltx_table").each((_, el) => {
+    const id = $(el).attr("id") ?? "";
+    const caption = $(el).find("figcaption").text().trim();
+    const tableEl = $(el).find("table").first();
+    if (!tableEl.length || !caption) return;
+
+    // math 태그를 alttext로 교체해서 가독성 확보
+    tableEl.find("math").each((__, m) => {
+      const alt = $(m).attr("alttext") ?? "";
+      $(m).replaceWith(alt);
+    });
+
+    const tableHtml = $.html(tableEl);
+    figures.push({ id, tableHtml, caption, type: "table" });
   });
 
   // Display equations: extract LaTeX from alttext of display math

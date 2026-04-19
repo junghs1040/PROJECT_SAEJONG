@@ -160,40 +160,50 @@ function FiguresPanel({ figures }: { figures: Figure[] }) {
 }
 
 function FigureCard({ fig }: { fig: Figure }) {
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState(false);
-
   const figNum = fig.caption.match(/Figure\s*(\d+)/i)?.[1] ?? "";
   const tableNum = fig.caption.match(/Table\s*(\d+)/i)?.[1] ?? "";
   const label = tableNum ? `Table ${tableNum}` : figNum ? `Fig. ${figNum}` : "";
 
   return (
     <div className="rounded-xl border overflow-hidden w-full" style={{ borderColor: "var(--border)" }}>
-      <div className="relative bg-gray-50 flex items-center justify-center" style={{ minHeight: 180 }}>
-        {!error ? (
-          <img
-            src={fig.url}
-            alt={fig.caption}
-            className="w-full object-contain"
-            style={{ maxHeight: 420, opacity: loaded ? 1 : 0, transition: "opacity 0.3s" }}
-            onLoad={() => setLoaded(true)}
-            onError={() => setError(true)}
-          />
-        ) : (
-          <span className="text-xs" style={{ color: "var(--text-placeholder)" }}>이미지 로드 실패</span>
-        )}
-        {!loaded && !error && (
-          <div className="absolute inset-0 animate-pulse" style={{ backgroundColor: "var(--border)" }} />
-        )}
-        {label && (
-          <span
-            className="absolute top-2 left-2 text-xs font-semibold px-2 py-0.5 rounded-md"
-            style={{ backgroundColor: "var(--sky)", color: "#fff" }}
-          >
-            {label}
-          </span>
-        )}
-      </div>
+      {label && (
+        <div
+          className="px-4 py-2 text-xs font-semibold"
+          style={{ backgroundColor: "#e8f4fd", borderBottom: "1px solid var(--border)", color: "var(--sky)" }}
+        >
+          {label}
+        </div>
+      )}
+      {fig.type === "table" && fig.tableHtml ? (
+        <div className="overflow-x-auto p-2 paper-table" dangerouslySetInnerHTML={{ __html: fig.tableHtml }} />
+      ) : (
+        <ImageFigure fig={fig} />
+      )}
+    </div>
+  );
+}
+
+function ImageFigure({ fig }: { fig: Figure }) {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+
+  return (
+    <div className="relative bg-gray-50 flex items-center justify-center" style={{ minHeight: 180 }}>
+      {!error ? (
+        <img
+          src={fig.url}
+          alt={fig.caption}
+          className="w-full object-contain"
+          style={{ maxHeight: 420, opacity: loaded ? 1 : 0, transition: "opacity 0.3s" }}
+          onLoad={() => setLoaded(true)}
+          onError={() => setError(true)}
+        />
+      ) : (
+        <span className="text-xs py-8" style={{ color: "var(--text-placeholder)" }}>이미지 로드 실패</span>
+      )}
+      {!loaded && !error && (
+        <div className="absolute inset-0 animate-pulse" style={{ backgroundColor: "var(--border)" }} />
+      )}
     </div>
   );
 }

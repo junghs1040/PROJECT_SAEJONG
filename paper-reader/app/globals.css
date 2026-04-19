@@ -19,3 +19,38 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* ar5iv HTML 테이블 스타일 */
+.paper-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  color: var(--foreground);
+}
+.paper-table th,
+.paper-table td {
+  padding: 6px 12px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+.paper-table th {
+  font-weight: 600;
+  background-color: #f0f8ff;
+  color: var(--foreground);
+}
+.paper-table tr:last-child td,
+.paper-table tr:last-child th {
+  border-bottom: none;
+}
+.paper-table .ltx_border_tt {
+  border-top: 2px solid #94a3b8;
+}
+.paper-table .ltx_border_t {
+  border-top: 1px solid var(--border);
+}
+.paper-table .ltx_align_left {
+  text-align: left;
+}
+.paper-table .ltx_align_right {
+  text-align: right;
+}
