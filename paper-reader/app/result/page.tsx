@@ -208,6 +208,23 @@ function ImageFigure({ fig }: { fig: Figure }) {
   );
 }
 
+// 텍스트에서 언급된 Figure/Table을 유연하게 찾아 반환
+function findRefs(text: string, figures: Figure[]): Figure[] {
+  return figures.filter((f) => {
+    const figNum = f.caption.match(/Figure\s*(\d+)/i)?.[1];
+    const tableNum = f.caption.match(/Table\s*(\d+)/i)?.[1];
+    if (figNum) {
+      const re = new RegExp(`Figure[\\s.]*${figNum}(?![0-9])`, "i");
+      if (re.test(text)) return true;
+    }
+    if (tableNum) {
+      const re = new RegExp(`(Table[\\s.]*${tableNum}|표\\s*${tableNum})(?![0-9])`, "i");
+      if (re.test(text)) return true;
+    }
+    return false;
+  });
+}
+
 function MarkdownResult({ text, figures }: { text: string; figures: Figure[] }) {
   if (!text) return null;
 
@@ -224,12 +241,7 @@ function MarkdownResult({ text, figures }: { text: string; figures: Figure[] }) 
       const isTechDeep = title.includes("기술적 상세") || title.includes("Technical Deep Dive");
       const isExperiment = title.includes("실험 결과");
 
-      const referencedFigs = figures.filter((f) => {
-        const figNum = f.caption.match(/Figure\s*(\d+)/i)?.[1];
-        const tableNum = f.caption.match(/Table\s*(\d+)/i)?.[1];
-        return (figNum && content.includes(`Figure ${figNum}`)) ||
-               (tableNum && (content.includes(`Table ${tableNum}`) || content.includes(`표 ${tableNum}`)));
-      });
+      const referencedFigs = findRefs(content, figures);
 
       elements.push(
         <section key={i} className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
@@ -280,10 +292,7 @@ function TechDeepContent({ text, figures }: { text: string; figures: Figure[] })
       const body = blocks[i + 1] ?? "";
       i++;
 
-      const referencedFigs = figures.filter((f) => {
-        const num = f.caption.match(/Figure\s*(\d+)/i)?.[1];
-        return num && body.includes(`Figure ${num}`);
-      });
+      const referencedFigs = findRefs(body, figures);
 
       cards.push(
         <div
@@ -335,12 +344,7 @@ function ExperimentContent({ text, figures }: { text: string; figures: Figure[] 
       const body = blocks[i + 1] ?? "";
       i++;
 
-      const referencedFigs = figures.filter((f) => {
-        const figNum = f.caption.match(/Figure\s*(\d+)/i)?.[1];
-        const tableNum = f.caption.match(/Table\s*(\d+)/i)?.[1];
-        return (figNum && body.includes(`Figure ${figNum}`)) ||
-               (tableNum && (body.includes(`Table ${tableNum}`) || body.includes(`표 ${tableNum}`)));
-      });
+      const referencedFigs = findRefs(body, figures);
 
       cards.push(
         <div
