@@ -487,6 +487,21 @@ function getLineStyle(line: string): LineStyle | null {
 function RichLine({ line }: { line: string }) {
   if (line.trim() === "") return <div className="h-1" />;
 
+  if (line.startsWith("#### ")) {
+    return (
+      <h4 className="text-sm font-bold mt-3 mb-0.5" style={{ color: "#1a1a2e" }}>
+        <MathLine text={line.replace(/^####\s/, "")} />
+      </h4>
+    );
+  }
+  if (line.startsWith("### ")) {
+    return (
+      <h3 className="text-base font-semibold mt-4 mb-1" style={{ color: "#1a1a2e" }}>
+        <MathLine text={line.replace(/^###\s/, "")} />
+      </h3>
+    );
+  }
+
   const style = getLineStyle(line);
 
   // **bold:** 레이블 패턴
@@ -592,37 +607,38 @@ type Part = { type: "text" | "inline-math" | "block-math"; content: string };
 
 function splitMath(text: string): Part[] {
   const parts: Part[] = [];
-  let remaining = text;
+  let i = 0, textStart = 0;
 
-  while (remaining.length > 0) {
-    const blockIdx = remaining.indexOf("$$");
-    const inlineIdx = remaining.indexOf("$");
-
-    if (blockIdx !== -1 && (inlineIdx === blockIdx)) {
-      // block math $$...$$
-      const end = remaining.indexOf("$$", blockIdx + 2);
+  while (i < text.length) {
+    if (text[i] === "$" && text[i + 1] === "$") {
+      if (i > textStart) parts.push({ type: "text", content: text.slice(textStart, i) });
+      const start = i + 2;
+      const end = text.indexOf("$$", start);
       if (end !== -1) {
-        if (blockIdx > 0) parts.push({ type: "text", content: remaining.slice(0, blockIdx) });
-        parts.push({ type: "block-math", content: remaining.slice(blockIdx + 2, end) });
-        remaining = remaining.slice(end + 2);
-        continue;
+        parts.push({ type: "block-math", content: text.slice(start, end) });
+        i = end + 2;
+      } else {
+        parts.push({ type: "text", content: "$$" });
+        i += 2;
       }
-    }
-
-    if (inlineIdx !== -1) {
-      const end = remaining.indexOf("$", inlineIdx + 1);
-      if (end !== -1 && end !== inlineIdx + 1) {
-        if (inlineIdx > 0) parts.push({ type: "text", content: remaining.slice(0, inlineIdx) });
-        parts.push({ type: "inline-math", content: remaining.slice(inlineIdx + 1, end) });
-        remaining = remaining.slice(end + 1);
-        continue;
+      textStart = i;
+    } else if (text[i] === "$") {
+      const start = i + 1;
+      const end = text.indexOf("$", start);
+      if (end !== -1 && end > start) {
+        if (i > textStart) parts.push({ type: "text", content: text.slice(textStart, i) });
+        parts.push({ type: "inline-math", content: text.slice(start, end) });
+        i = end + 1;
+        textStart = i;
+      } else {
+        i++;
       }
+    } else {
+      i++;
     }
-
-    parts.push({ type: "text", content: remaining });
-    break;
   }
 
+  if (textStart < text.length) parts.push({ type: "text", content: text.slice(textStart) });
   return parts;
 }
 

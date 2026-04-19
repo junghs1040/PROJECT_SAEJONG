@@ -1,6 +1,7 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
 import { PDFParse } from "pdf-parse";
+import katex from "katex";
 
 const MAX_CHARS = 20000;
 
@@ -95,7 +96,13 @@ async function fetchAr5iv(arxivId: string): Promise<PaperMeta> {
     if (!tableEl.length || !caption) return;
     tableEl.find("math").each((__, m) => {
       const alt = $(m).attr("alttext") ?? "";
-      $(m).replaceWith(alt);
+      const isDisplay = $(m).attr("display") === "block";
+      try {
+        const rendered = katex.renderToString(alt, { throwOnError: false, displayMode: isDisplay, output: "html" });
+        $(m).replaceWith(rendered);
+      } catch {
+        $(m).replaceWith(alt);
+      }
     });
     const tableHtml = $.html(tableEl);
     figures.push({ id, tableHtml, caption, type: "table" });

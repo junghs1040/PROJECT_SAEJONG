@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
       messages: [{ role: "user", content: prompt }],
       stream: true,
       temperature: 0.3,
-      max_tokens: 6000,
+      max_tokens: 16000,
     });
   } catch (e: unknown) {
     const msg =
